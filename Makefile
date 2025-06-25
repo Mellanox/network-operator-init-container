@@ -1,6 +1,9 @@
 # Version information
 include Makefile.version
 
+# License targets
+include license.mk
+
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
