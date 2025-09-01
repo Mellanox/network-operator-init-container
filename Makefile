@@ -109,7 +109,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCILINT ?= $(LOCALBIN)/golangci-lint
 
 ## Tool Versions
-GOLANGCILINT_VERSION ?= v1.63.4
+GOLANGCILINT_VERSION ?= v1.64.8
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
