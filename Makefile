@@ -38,6 +38,7 @@ TARGET_ARCH ?= $(shell go env GOARCH)
 GO_BUILD_OPTS ?= CGO_ENABLED=0 GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH)
 # Linker flags for go build command
 GO_LDFLAGS = $(VERSION_LDFLAGS)
+GOPROXY ?=
 
 
 PKGS = $(or $(PKG),$(shell cd $(PROJECT_DIR) && go list ./...))
@@ -91,7 +92,7 @@ build: ## Build binary
 
 .PHONY: docker-build
 docker-build: ## Build docker image with ipam binaries
-	$(DOCKER_CMD) build -t $(IMG) -f $(DOCKERFILE) .
+	$(DOCKER_CMD) build -t $(IMG) -f $(DOCKERFILE) --build-arg GOPROXY="$(GOPROXY)" .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with ipam binaries
