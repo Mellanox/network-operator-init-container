@@ -6,7 +6,7 @@ on:
 jobs:
   image-build-push:
     name: Image build and push
-    runs-on: ubuntu-latest
+    runs-on: linux-amd64-cpu4
     steps:
       - name: Set repository as lower-case output variable
         id: repo_name
@@ -36,6 +36,8 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            "GOPROXY=${{ secrets.GO_PROXY_URL }}"
           tags: |
             ghcr.io/${{ steps.repo_name.outputs.repository }}:latest
           labels: ${{ steps.docker_meta.outputs.labels }}
