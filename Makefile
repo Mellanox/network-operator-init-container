@@ -38,8 +38,7 @@ TARGET_ARCH ?= $(shell go env GOARCH)
 GO_BUILD_OPTS ?= CGO_ENABLED=0 GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH)
 # Linker flags for go build command
 GO_LDFLAGS = $(VERSION_LDFLAGS)
-GOPROXY ?=
-
+GOPROXY ?= $(shell go env GOPROXY)
 
 PKGS = $(or $(PKG),$(shell cd $(PROJECT_DIR) && go list ./...))
 
