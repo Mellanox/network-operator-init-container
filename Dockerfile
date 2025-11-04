@@ -34,7 +34,7 @@ COPY . /workspace
 # Build with make to apply all build logic defined in Makefile
 RUN make build
 
-FROM nvcr.io/nvidia/distroless/go:v3.2.0
+FROM nvcr.io/nvidia/distroless/go:v3.2.1
 WORKDIR /
 COPY --from=builder /workspace/build/network-operator-init-container .
 
