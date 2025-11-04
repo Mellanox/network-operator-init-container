@@ -14,6 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+ARG BASE_IMAGE_GO_DISTROLESS
+
 # Build the image
 FROM golang:1.24 as builder
 
@@ -34,7 +36,7 @@ COPY . /workspace
 # Build with make to apply all build logic defined in Makefile
 RUN make build
 
-FROM nvcr.io/nvidia/distroless/go:v3.2.1
+FROM ${BASE_IMAGE_GO_DISTROLESS:-nvcr.io/nvidia/distroless/go:v3.2.1}
 WORKDIR /
 COPY --from=builder /workspace/build/network-operator-init-container .
 
