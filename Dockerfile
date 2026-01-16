@@ -17,7 +17,7 @@
 ARG BASE_IMAGE_GO_DISTROLESS
 
 # Build the image
-FROM golang:1.25.5 as builder
+FROM golang:1.26rc2 as builder
 
 ARG GOPROXY
 ENV GOPROXY=$GOPROXY
