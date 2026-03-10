@@ -32,8 +32,8 @@ ifeq (,$(VERSION))
 endif
 
 # Add version/commit/date to linker flags
-VERSION_LDFLAGS = "-X github.com/Mellanox/network-operator-init-container/pkg/utils/version/version.version=${VERSION} \
-	-X github.com/Mellanox/network-operator-init-container/pkg/utils/version/version.commit=${COMMIT} \
-	-X github.com/Mellanox/network-operator-init-container/pkg/utils/version/version.gitTreeState=${GIT_TREE_STATE} \
-	-X github.com/Mellanox/network-operator-init-container/pkg/utils/version/version.releaseStatus=${RELEASE_STATUS} \
-	-X github.com/Mellanox/network-operator-init-container/pkg/utils/version/version.date=${DATE}"
+VERSION_LDFLAGS = "-X github.com/Mellanox/network-operator-init-container/pkg/utils/version.version=${VERSION} \
+	-X github.com/Mellanox/network-operator-init-container/pkg/utils/version.commit=${COMMIT} \
+	-X github.com/Mellanox/network-operator-init-container/pkg/utils/version.gitTreeState=${GIT_TREE_STATE} \
+	-X github.com/Mellanox/network-operator-init-container/pkg/utils/version.releaseStatus=${RELEASE_STATUS} \
+	-X github.com/Mellanox/network-operator-init-container/pkg/utils/version.date=${DATE}"
