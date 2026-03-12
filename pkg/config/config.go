@@ -35,6 +35,22 @@ func Load(config string) (*Config, error) {
 type Config struct {
 	// configuration options for safeDriverLoading feature
 	SafeDriverLoad SafeDriverLoadConfig `json:"safeDriverLoad"`
+	// configuration options for module dependency checking feature
+	ModuleDependencyCheck ModuleDependencyCheckConfig `json:"moduleDependencyCheck"`
+}
+
+// ModuleDependencyCheckConfig contains configuration options for module dependency checking feature
+type ModuleDependencyCheckConfig struct {
+	// enable module dependency checking feature
+	Enable bool `json:"enable"`
+	// list of MOFED kernel modules to check for external dependencies
+	Modules []string `json:"modules"`
+	// list of modules that are allowed to depend on MOFED modules (will not block driver loading)
+	AllowedModules []string `json:"allowedModules"`
+	// path to the host's /proc filesystem mount inside the container
+	HostProcPath string `json:"hostProcPath"`
+	// path to the host's /sys filesystem mount inside the container
+	HostSysPath string `json:"hostSysPath"`
 }
 
 // SafeDriverLoadConfig contains configuration options for safeDriverLoading feature
@@ -49,6 +65,9 @@ type SafeDriverLoadConfig struct {
 func (c *Config) Validate() error {
 	if c.SafeDriverLoad.Enable && c.SafeDriverLoad.Annotation == "" {
 		return fmt.Errorf(".safeDriverLoad.annotation is required if safeDriverLoad feature is enabled")
+	}
+	if c.ModuleDependencyCheck.Enable && len(c.ModuleDependencyCheck.Modules) == 0 {
+		return fmt.Errorf(".moduleDependencyCheck.modules is required if moduleDependencyCheck feature is enabled")
 	}
 	return nil
 }
