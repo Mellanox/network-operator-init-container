@@ -16,6 +16,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,6 +41,7 @@ import (
 
 	"github.com/Mellanox/network-operator-init-container/cmd/network-operator-init-container/app/options"
 	configPgk "github.com/Mellanox/network-operator-init-container/pkg/config"
+	"github.com/Mellanox/network-operator-init-container/pkg/modules"
 	"github.com/Mellanox/network-operator-init-container/pkg/utils/version"
 )
 
@@ -135,6 +137,13 @@ func RunNetworkOperatorInitContainer(ctx context.Context, config *rest.Config, o
 	}
 	logger.Info("network-operator-init-container configuration", "config", initContCfg.String())
 
+	// Module dependency check — fail fast before safe driver loading
+	if initContCfg.ModuleDependencyCheck.Enable {
+		if err := runModuleDependencyCheck(ctx, initContCfg, logger); err != nil {
+			return err
+		}
+	}
+
 	if !initContCfg.SafeDriverLoad.Enable {
 		logger.Info("safe driver loading is disabled, exit")
 		return nil
@@ -229,6 +238,97 @@ func writeCh(ch chan error, err error) {
 	case ch <- err:
 	default:
 	}
+}
+
+// runModuleDependencyCheck performs the module dependency pre-flight check and reports any issues.
+func runModuleDependencyCheck(ctx context.Context, initContCfg *configPgk.Config, logger logr.Logger) error {
+	logger.Info("running module dependency check",
+		"modules", initContCfg.ModuleDependencyCheck.Modules)
+
+	procPath := initContCfg.ModuleDependencyCheck.HostProcPath
+	if procPath == "" {
+		procPath = "/proc"
+	}
+	sysPath := initContCfg.ModuleDependencyCheck.HostSysPath
+	if sysPath == "" {
+		sysPath = "/sys"
+	}
+
+	if initContCfg.ModuleDependencyCheck.UnloadThirdPartyRDMA {
+		logger.Info("UNLOAD_THIRD_PARTY_RDMA_MODULES is enabled; known third-party RDMA modules will be skipped")
+	}
+
+	checker := modules.NewChecker(
+		initContCfg.ModuleDependencyCheck.Modules,
+		initContCfg.ModuleDependencyCheck.UnloadThirdPartyRDMA,
+		procPath, sysPath, logger)
+
+	report, err := checker.RunAllChecks(ctx)
+	if err != nil {
+		return fmt.Errorf("module dependency check failed: %w", err)
+	}
+
+	if err := reportPreFlightIssues(logger, report); err != nil {
+		return err
+	}
+	logger.Info("module dependency check passed")
+	return nil
+}
+
+// reportPreFlightIssues logs all pre-flight check issues and returns an error if any were found.
+func reportPreFlightIssues(logger logr.Logger, report *modules.DependencyReport) error {
+	totalIssues := len(report.ThirdPartyRDMA) + len(report.UnknownKernelModules) + len(report.UserspaceIssues)
+	if totalIssues == 0 {
+		return nil
+	}
+
+	// Category 1: known third-party RDMA modules (automatable)
+	if len(report.ThirdPartyRDMA) > 0 {
+		for _, dep := range report.ThirdPartyRDMA {
+			logger.Error(fmt.Errorf("third-party RDMA module dependency"),
+				"third-party RDMA module blocking MOFED driver reload",
+				"mofedModule", dep.MofedModule,
+				"dependents", strings.Join(dep.Dependents, ", "))
+		}
+		logger.Error(fmt.Errorf("third-party RDMA modules require configuration change"),
+			"Recommended action: set UNLOAD_THIRD_PARTY_RDMA_MODULES=\"true\" in "+
+				"NicClusterPolicy ofedDriver env vars to automatically unload known third-party "+
+				"RDMA modules before driver reload. Verify that no running workloads depend on "+
+				"these modules before enabling.")
+	}
+
+	// Category 2: unknown kernel modules (error level — manual intervention)
+	if len(report.UnknownKernelModules) > 0 {
+		for _, dep := range report.UnknownKernelModules {
+			logger.Error(fmt.Errorf("unknown kernel module dependency"),
+				"unrecognized module(s) blocking MOFED driver reload",
+				"mofedModule", dep.MofedModule,
+				"dependents", strings.Join(dep.Dependents, ", "))
+		}
+		logger.Error(fmt.Errorf("unknown kernel modules require manual intervention"),
+			"Required action: manually unload or blacklist these modules "+
+				"before deploying the DOCA driver. Automatic unloading is not supported "+
+				"for unrecognized modules.")
+	}
+
+	// Category 3: userspace processes (error level — manual intervention)
+	if len(report.UserspaceIssues) > 0 {
+		for _, issue := range report.UserspaceIssues {
+			logger.Error(fmt.Errorf("userspace process holding module"),
+				"userspace reference(s) blocking MOFED module unload",
+				"module", issue.Module,
+				"refcount", issue.Refcount,
+				"kernelHolders", issue.HolderCount,
+				"holders", strings.Join(issue.Holders, ", "),
+				"userspaceRefs", issue.UserspaceCount)
+		}
+		logger.Error(fmt.Errorf("userspace processes require manual intervention"),
+			"Required action: identify and stop processes using MOFED modules. "+
+				"Run on host: lsof /dev/infiniband/* or fuser -v /dev/infiniband/*. "+
+				"Common culprits: opensm, ibacm, rdma-ndd, srpd")
+	}
+
+	return fmt.Errorf("pre-flight check found %d issue(s); cannot safely reload MOFED drivers", totalIssues)
 }
 
 // SetupWithManager sets up the controller with the Manager.
