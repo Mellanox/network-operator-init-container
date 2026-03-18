@@ -16,6 +16,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,6 +41,7 @@ import (
 
 	"github.com/Mellanox/network-operator-init-container/cmd/network-operator-init-container/app/options"
 	configPgk "github.com/Mellanox/network-operator-init-container/pkg/config"
+	"github.com/Mellanox/network-operator-init-container/pkg/modules"
 	"github.com/Mellanox/network-operator-init-container/pkg/utils/version"
 )
 
@@ -134,6 +136,76 @@ func RunNetworkOperatorInitContainer(ctx context.Context, config *rest.Config, o
 		return err
 	}
 	logger.Info("network-operator-init-container configuration", "config", initContCfg.String())
+
+	// Module dependency check — fail fast before safe driver loading
+	if initContCfg.ModuleDependencyCheck.Enable {
+		logger.Info("running module dependency check",
+			"modules", initContCfg.ModuleDependencyCheck.Modules)
+
+		procPath := initContCfg.ModuleDependencyCheck.HostProcPath
+		if procPath == "" {
+			procPath = "/proc"
+		}
+		sysPath := initContCfg.ModuleDependencyCheck.HostSysPath
+		if sysPath == "" {
+			sysPath = "/sys"
+		}
+
+		if len(initContCfg.ModuleDependencyCheck.AllowedModules) > 0 {
+			logger.Info("allowed modules (will not block driver loading)",
+				"allowedModules", initContCfg.ModuleDependencyCheck.AllowedModules)
+		}
+
+		checker := modules.NewChecker(
+			initContCfg.ModuleDependencyCheck.Modules,
+			initContCfg.ModuleDependencyCheck.AllowedModules,
+			procPath, sysPath, logger)
+
+		deps, err := checker.CheckDependencies(ctx)
+		if err != nil {
+			return fmt.Errorf("module dependency check failed: %w", err)
+		}
+
+		userspaceIssues, err := checker.CheckUserspaceUsers(ctx)
+		if err != nil {
+			return fmt.Errorf("userspace user check failed: %w", err)
+		}
+
+		totalIssues := len(deps) + len(userspaceIssues)
+		if totalIssues > 0 {
+			logger.Error(nil, "ERROR: Pre-flight check failed — cannot safely reload MOFED drivers")
+
+			if len(deps) > 0 {
+				logger.Error(nil, "Blocking kernel module dependencies:")
+				for _, dep := range deps {
+					logger.Error(nil, fmt.Sprintf("  - %s is used by: %s (not in allowedModules)",
+						dep.MofedModule, strings.Join(dep.Dependents, ", ")))
+				}
+				logger.Error(nil, "  Actions:")
+				logger.Error(nil, "    1. Add these modules to UNLOAD_CUSTOM_MODULES in NicClusterPolicy env vars")
+				logger.Error(nil, "    2. Or unload/remove these modules from the host before deploying DOCA driver")
+			}
+
+			if len(userspaceIssues) > 0 {
+				logger.Error(nil, "Userspace processes holding MOFED modules:")
+				for _, issue := range userspaceIssues {
+					holderStr := ""
+					if len(issue.Holders) > 0 {
+						holderStr = fmt.Sprintf(" (%s)", strings.Join(issue.Holders, ", "))
+					}
+					logger.Error(nil, fmt.Sprintf("  - %s: refcount=%d, kernel holders=%d%s, %d unknown userspace reference(s)",
+						issue.Module, issue.Refcount, issue.HolderCount, holderStr, issue.UserspaceCount))
+				}
+				logger.Error(nil, "  Actions:")
+				logger.Error(nil, "    1. Run on the host: lsof /dev/infiniband/* or fuser /dev/infiniband/*")
+				logger.Error(nil, "    2. Stop the identified process(es) before deploying DOCA driver")
+				logger.Error(nil, "    3. Common culprits: opensm, ibacm, rdma-ndd")
+			}
+
+			return fmt.Errorf("pre-flight check found %d issue(s); cannot safely reload MOFED drivers", totalIssues)
+		}
+		logger.Info("module dependency check passed")
+	}
 
 	if !initContCfg.SafeDriverLoad.Enable {
 		logger.Info("safe driver loading is disabled, exit")
