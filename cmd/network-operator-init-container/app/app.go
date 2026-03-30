@@ -11,6 +11,7 @@
  limitations under the License.
 */
 
+// Package app provides the command and main loop for the network-operator-init-container.
 package app
 
 import (
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	cliflag "k8s.io/component-base/cli/flag"
+	_ "k8s.io/component-base/logs/json/register" // register json format for logger
 	"k8s.io/component-base/term"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -35,13 +37,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	// register json format for logger
-	_ "k8s.io/component-base/logs/json/register"
 
 	"github.com/Mellanox/network-operator-init-container/cmd/network-operator-init-container/app/options"
 	configPgk "github.com/Mellanox/network-operator-init-container/pkg/config"
 	"github.com/Mellanox/network-operator-init-container/pkg/utils/version"
 )
+
+const requeueInterval = 5 * time.Second
 
 // NewNetworkOperatorInitContainerCommand creates a new command
 func NewNetworkOperatorInitContainerCommand() *cobra.Command {
@@ -53,7 +55,7 @@ func NewNetworkOperatorInitContainerCommand() *cobra.Command {
 		Long:         `NVIDIA Network Operator init container`,
 		SilenceUsage: true,
 		Version:      version.GetVersionString(),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			if err := opts.Validate(); err != nil {
 				return fmt.Errorf("invalid config: %w", err)
 			}
@@ -65,7 +67,7 @@ func NewNetworkOperatorInitContainerCommand() *cobra.Command {
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
 			for _, arg := range args {
-				if len(arg) > 0 {
+				if arg != "" {
 					return fmt.Errorf("%q does not take any arguments, got %q", cmd.CommandPath(), args)
 				}
 			}
@@ -152,17 +154,7 @@ func RunNetworkOperatorInitContainer(ctx context.Context, config *rest.Config, o
 		return err
 	}
 
-	node := &corev1.Node{}
-	err = k8sClient.Get(ctx, types.NamespacedName{Name: opts.NodeName}, node)
-	if err != nil {
-		logger.Error(err, "failed to read node object from the API", "node", opts.NodeName)
-		return err
-	}
-	err = k8sClient.Patch(ctx, node, client.RawPatch(
-		types.MergePatchType, []byte(
-			fmt.Sprintf(`{"metadata":{"annotations":{%q: %q}}}`,
-				initContCfg.SafeDriverLoad.Annotation, "true"))))
-	if err != nil {
+	if err = setNodeAnnotation(ctx, k8sClient, opts.NodeName, initContCfg.SafeDriverLoad.Annotation); err != nil {
 		logger.Error(err, "unable to set annotation for node", "node", opts.NodeName)
 		return err
 	}
@@ -221,7 +213,18 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	reqLog.Info("annotation still present, waiting")
 
-	return ctrl.Result{RequeueAfter: time.Second * 5}, nil
+	return ctrl.Result{RequeueAfter: requeueInterval}, nil
+}
+
+func setNodeAnnotation(ctx context.Context, k8sClient client.Client, nodeName, annotation string) error {
+	node := &corev1.Node{}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, node); err != nil {
+		return fmt.Errorf("failed to read node object from the API: %w", err)
+	}
+	return k8sClient.Patch(ctx, node, client.RawPatch(
+		types.MergePatchType, []byte(
+			fmt.Sprintf(`{"metadata":{"annotations":{%q: %q}}}`,
+				annotation, "true"))))
 }
 
 func writeCh(ch chan error, err error) {

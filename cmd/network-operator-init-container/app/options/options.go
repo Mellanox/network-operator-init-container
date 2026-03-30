@@ -11,6 +11,7 @@
  limitations under the License.
 */
 
+// Package options provides configuration options for the init container command.
 package options
 
 import (

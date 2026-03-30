@@ -11,6 +11,7 @@
  limitations under the License.
 */
 
+// Package version provides version information for the application.
 package version
 
 import "fmt"

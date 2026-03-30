@@ -108,10 +108,10 @@ $(LOCALBIN):
 
 ## Tool Binaries
 ENVTEST ?= $(LOCALBIN)/setup-envtest
-GOLANGCILINT ?= $(LOCALBIN)/golangci-lint
+GOLANGCILINT ?= $(LOCALBIN)/golangci-lint-$(GOLANGCILINT_VERSION)
 
 ## Tool Versions
-GOLANGCILINT_VERSION ?= v1.64.8
+GOLANGCILINT_VERSION ?= v2.11.4
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
@@ -121,4 +121,5 @@ $(ENVTEST): | $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCILINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCILINT): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
+	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
+	mv $(LOCALBIN)/golangci-lint $(GOLANGCILINT)
