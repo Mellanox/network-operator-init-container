@@ -11,6 +11,7 @@
  limitations under the License.
 */
 
+// Package config provides configuration types and loading for the init container.
 package config
 
 import (

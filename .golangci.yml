@@ -1,0 +1,107 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - dogsled
+    - dupl
+    - errcheck
+    - funlen
+    - gocritic
+    - gocognit
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - mnd
+    - nakedret
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+  settings:
+    dupl:
+      threshold: 150
+    funlen:
+      lines: 100
+      statements: 50
+    goconst:
+      min-len: 2
+      min-occurrences: 2
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - dupImport
+        - ifElseChain
+        - importShadow
+        - octalLiteral
+        - whyNoLint
+        - wrapperFunc
+        - unnamedResult
+    gocognit:
+      min-complexity: 30
+    mnd:
+      settings:
+        checks: argument,case,condition,return
+    govet:
+      settings:
+        printf:
+          funcs:
+            - (github.com/rs/zerolog/zerolog.Event).Msgf
+    gosec:
+      excludes:
+        - G115
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF*"
+    lll:
+      line-length: 120
+    misspell:
+      locale: US
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: false
+  exclusions:
+    generated: lax
+    rules:
+      - path: _test\.go
+        linters:
+          - revive
+          - staticcheck
+        text: "should not use dot imports"
+      - path: _test\.go
+        linters:
+          - gosec
+          - mnd
+          - goconst
+      - text: "Magic number: 1"
+        linters:
+          - mnd
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes: github.com/Mellanox/network-operator-init-container
+  exclusions:
+    generated: lax
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0

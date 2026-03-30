@@ -11,6 +11,7 @@
  limitations under the License.
 */
 
+// Package main is the entry point for the network-operator-init-container.
 package main
 
 import (
