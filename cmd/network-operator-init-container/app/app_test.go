@@ -47,7 +47,7 @@ func createNode(name string) *corev1.Node {
 	return node
 }
 
-func createConfig(cfg configPgk.Config) {
+func createConfig(cfg *configPgk.Config) {
 	data, err := json.Marshal(cfg)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	err = k8sClient.Create(ctx, &corev1.ConfigMap{
@@ -91,7 +91,7 @@ var _ = Describe("Init container", func() {
 			defer GinkgoRecover()
 			opts := newOpts()
 			opts.NodeName = testNodeName
-			createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+			createConfig(&configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 				Enable:     true,
 				Annotation: testAnnotation,
 			}})
@@ -123,7 +123,7 @@ var _ = Describe("Init container", func() {
 			defer GinkgoRecover()
 			opts := newOpts()
 			opts.NodeName = "unknown-node"
-			createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+			createConfig(&configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 				Enable:     true,
 				Annotation: testAnnotation,
 			}})
@@ -145,7 +145,7 @@ var _ = Describe("Init container", func() {
 			defer GinkgoRecover()
 			opts := newOpts()
 			opts.NodeName = testNodeName
-			createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+			createConfig(&configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 				Enable:     true,
 				Annotation: testAnnotation,
 			}})
@@ -186,7 +186,7 @@ var _ = Describe("Init container", func() {
 			defer GinkgoRecover()
 			opts := newOpts()
 			opts.NodeName = testNodeName
-			createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+			createConfig(&configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 				Enable: false,
 			}})
 			var err error
