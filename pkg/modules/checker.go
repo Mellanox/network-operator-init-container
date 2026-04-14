@@ -32,15 +32,18 @@ const (
 )
 
 // KnownThirdPartyRDMAModules is the set of non-NVIDIA kernel modules from the RDMA ecosystem
-// (rdma-core providers and consumers). When UnloadThirdPartyRDMA is true these are treated
-// as allowed and the driver container will handle their unloading.
+// (third-party NIC vendor RDMA providers). When UnloadThirdPartyRDMA is true these are
+// treated as allowed and the driver container will handle their unloading.
+//
+// NOTE: Do NOT add core RDMA infrastructure modules (iw_cm, ib_cm, rdma_cm, etc.)
+// here — MOFED manages those in its own unload sequence. Do NOT add storage-over-RDMA
+// modules (ib_srp, ib_iser, ib_isert, nvme_rdma, etc.) — those are handled by
+// UNLOAD_STORAGE_MODULES in the driver container.
 var KnownThirdPartyRDMAModules = map[string]struct{}{
 	"bnxt_re": {}, "efa": {}, "erdma": {}, "iw_cxgb4": {},
 	"hfi1": {}, "hns_roce": {}, "ionic_rdma": {}, "irdma": {},
 	"ib_qib": {}, "mana_ib": {}, "ocrdma": {}, "qedr": {},
 	"rdma_rxe": {}, "siw": {}, "vmw_pvrdma": {},
-	"ib_srp": {}, "ib_iser": {}, "iw_cm": {}, "ib_isert": {},
-	"nvme_rdma": {}, "nvmet_rdma": {}, "rpcrdma": {}, "xprtrdma": {},
 }
 
 // DependencyReport contains the 3-tier classification of blocking dependencies.
