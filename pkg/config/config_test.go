@@ -94,6 +94,27 @@ var _ = Describe("Config test", func() {
 		Expect(cfg.ModuleDependencyCheck.Modules).To(Equal([]string{"mlx5_core", "ib_core"}))
 		Expect(cfg.ModuleDependencyCheck.UnloadThirdPartyRDMA).To(BeTrue())
 	})
+	It("Valid - moduleDependencyCheck enabled with UnloadStorageModules", func() {
+		cfg, err := configPgk.Load(createConfig(&configPgk.Config{
+			ModuleDependencyCheck: configPgk.ModuleDependencyCheckConfig{
+				Enable:               true,
+				Modules:              []string{"mlx5_core", "ib_core"},
+				UnloadStorageModules: true,
+				HostProcPath:         "/host/proc",
+				HostSysPath:          "/host/sys",
+			},
+		}))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ModuleDependencyCheck.Enable).To(BeTrue())
+		Expect(cfg.ModuleDependencyCheck.UnloadStorageModules).To(BeTrue())
+		Expect(cfg.ModuleDependencyCheck.UnloadThirdPartyRDMA).To(BeFalse())
+	})
+	It("Backward compatible - old config without unloadStorageModules field defaults to false", func() {
+		oldJSON := `{"safeDriverLoad":{"enable":false},"moduleDependencyCheck":{"enable":true,"modules":["ib_core"]}}`
+		cfg, err := configPgk.Load(oldJSON)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ModuleDependencyCheck.UnloadStorageModules).To(BeFalse())
+	})
 	It("Logical validation failed - moduleDependencyCheck enabled with no modules", func() {
 		_, err := configPgk.Load(createConfig(&configPgk.Config{
 			ModuleDependencyCheck: configPgk.ModuleDependencyCheckConfig{

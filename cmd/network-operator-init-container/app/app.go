@@ -260,10 +260,14 @@ func runModuleDependencyCheck(ctx context.Context, initContCfg *configPgk.Config
 	if initContCfg.ModuleDependencyCheck.UnloadThirdPartyRDMA {
 		logger.Info("UNLOAD_THIRD_PARTY_RDMA_MODULES is enabled; known third-party RDMA modules will be skipped")
 	}
+	if initContCfg.ModuleDependencyCheck.UnloadStorageModules {
+		logger.Info("UNLOAD_STORAGE_MODULES is enabled; known storage modules will be skipped")
+	}
 
 	checker := modules.NewChecker(
 		initContCfg.ModuleDependencyCheck.Modules,
 		initContCfg.ModuleDependencyCheck.UnloadThirdPartyRDMA,
+		initContCfg.ModuleDependencyCheck.UnloadStorageModules,
 		procPath, sysPath, logger)
 
 	report, err := checker.RunAllChecks(ctx)
@@ -280,7 +284,8 @@ func runModuleDependencyCheck(ctx context.Context, initContCfg *configPgk.Config
 
 // reportPreFlightIssues logs all pre-flight check issues and returns an error if any were found.
 func reportPreFlightIssues(logger logr.Logger, report *modules.DependencyReport) error {
-	totalIssues := len(report.ThirdPartyRDMA) + len(report.UnknownKernelModules) + len(report.UserspaceIssues)
+	totalIssues := len(report.ThirdPartyRDMA) + len(report.StorageModules) +
+		len(report.UnknownKernelModules) + len(report.UserspaceIssues)
 	if totalIssues == 0 {
 		return nil
 	}
@@ -298,6 +303,21 @@ func reportPreFlightIssues(logger logr.Logger, report *modules.DependencyReport)
 				"NicClusterPolicy ofedDriver env vars to automatically unload known third-party "+
 				"RDMA modules before driver reload. Verify that no running workloads depend on "+
 				"these modules before enabling.")
+	}
+
+	// Category 1b: known storage-over-RDMA modules (automatable via UNLOAD_STORAGE_MODULES)
+	if len(report.StorageModules) > 0 {
+		for _, dep := range report.StorageModules {
+			logger.Error(fmt.Errorf("storage module dependency"),
+				"storage-over-RDMA module blocking MOFED driver reload",
+				"mofedModule", dep.MofedModule,
+				"dependents", strings.Join(dep.Dependents, ", "))
+		}
+		logger.Error(fmt.Errorf("storage modules require configuration change"),
+			"Recommended action: set UNLOAD_STORAGE_MODULES=\"true\" in "+
+				"NicClusterPolicy ofedDriver env vars to automatically unload known "+
+				"storage-over-RDMA modules before driver reload. Verify that no running "+
+				"workloads depend on these modules before enabling.")
 	}
 
 	// Category 2: unknown kernel modules (error level — manual intervention)
