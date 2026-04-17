@@ -48,6 +48,8 @@ type ModuleDependencyCheckConfig struct {
 	Modules []string `json:"modules"`
 	// when true, all known third-party RDMA modules are treated as allowed (driver will handle them)
 	UnloadThirdPartyRDMA bool `json:"unloadThirdPartyRdma"`
+	// when true, all known storage-over-RDMA modules are treated as allowed (driver will handle them)
+	UnloadStorageModules bool `json:"unloadStorageModules"`
 	// path to the host's /proc filesystem mount inside the container
 	HostProcPath string `json:"hostProcPath"`
 	// path to the host's /sys filesystem mount inside the container

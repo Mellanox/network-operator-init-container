@@ -46,10 +46,23 @@ var KnownThirdPartyRDMAModules = map[string]struct{}{
 	"rdma_rxe": {}, "siw": {}, "vmw_pvrdma": {},
 }
 
-// DependencyReport contains the 3-tier classification of blocking dependencies.
+// KnownStorageModules is the set of storage-over-RDMA kernel modules that can block
+// MOFED driver reload. When UnloadStorageModules is true these are treated as allowed
+// and the driver container will handle their unloading via UNLOAD_STORAGE_MODULES.
+//
+// This list must be kept in sync with doca-driver-build's StorageModules
+// (entrypoint/internal/config/config.go, STORAGE_MODULES env var).
+var KnownStorageModules = map[string]struct{}{
+	"ib_isert": {}, "nvme_rdma": {}, "nvmet_rdma": {},
+	"rpcrdma": {}, "xprtrdma": {}, "ib_srpt": {},
+}
+
+// DependencyReport contains the classified blocking dependencies.
 type DependencyReport struct {
-	// Category 1: Known third-party RDMA modules — can be auto-unloaded
+	// Category 1a: Known third-party RDMA modules — can be auto-unloaded
 	ThirdPartyRDMA []Dependency
+	// Category 1b: Known storage-over-RDMA modules — can be auto-unloaded
+	StorageModules []Dependency
 	// Category 2: Unknown kernel modules — user must handle manually
 	UnknownKernelModules []Dependency
 	// Category 3: Userspace references — user must identify and stop processes
@@ -71,6 +84,7 @@ type Dependency struct {
 type Checker struct {
 	modules              map[string]struct{}
 	unloadThirdPartyRDMA bool
+	unloadStorageModules bool
 	hostProcPath         string
 	hostSysPath          string
 	logger               logr.Logger
@@ -80,9 +94,11 @@ type Checker struct {
 // modules is the list of MOFED kernel modules to check for external dependencies.
 // unloadThirdPartyRDMA controls whether known third-party RDMA modules are treated
 // as allowed (the driver container will handle their unloading).
+// unloadStorageModules controls whether known storage-over-RDMA modules are treated
+// as allowed (the driver container will handle their unloading).
 // hostProcPath and hostSysPath are paths to the host's /proc and /sys mounts.
 func NewChecker(
-	modules []string, unloadThirdPartyRDMA bool,
+	modules []string, unloadThirdPartyRDMA bool, unloadStorageModules bool,
 	hostProcPath, hostSysPath string, logger logr.Logger,
 ) *Checker {
 	moduleSet := make(map[string]struct{}, len(modules))
@@ -92,6 +108,7 @@ func NewChecker(
 	return &Checker{
 		modules:              moduleSet,
 		unloadThirdPartyRDMA: unloadThirdPartyRDMA,
+		unloadStorageModules: unloadStorageModules,
 		hostProcPath:         hostProcPath,
 		hostSysPath:          hostSysPath,
 		logger:               logger,
@@ -337,10 +354,13 @@ func (c *Checker) CheckDependencies(ctx context.Context) ([]Dependency, error) {
 }
 
 // RunAllChecks performs BFS dependency detection and userspace detection, then
-// classifies each blocking issue into one of three categories:
-//   - Category 1: Known third-party RDMA modules (auto-unloadable when flag is set)
+// classifies each blocking issue into one of four categories:
+//   - Category 1a: Known third-party RDMA modules (auto-unloadable when flag is set)
+//   - Category 1b: Known storage-over-RDMA modules (auto-unloadable when flag is set)
 //   - Category 2: Unknown kernel modules (manual intervention required)
 //   - Category 3: Userspace processes holding modules open
+//
+// Modules with an "mlx5" prefix are NVIDIA's own modules and are always silently skipped.
 func (c *Checker) RunAllChecks(ctx context.Context) (*DependencyReport, error) {
 	report := &DependencyReport{}
 
@@ -353,23 +373,37 @@ func (c *Checker) RunAllChecks(ctx context.Context) (*DependencyReport, error) {
 	// Step 2: Classify kernel module dependencies
 	for _, dep := range allDeps {
 		var thirdParty []string
+		var storage []string
 		var unknown []string
 		for _, d := range dep.Dependents {
+			// mlx5-prefixed modules are NVIDIA's own — always greenlit
+			if strings.HasPrefix(d, "mlx5") {
+				continue
+			}
 			if _, isKnown := KnownThirdPartyRDMAModules[d]; isKnown {
 				if !c.unloadThirdPartyRDMA {
-					// Category 1: known RDMA but flag not set
 					thirdParty = append(thirdParty, d)
 				}
-				// If unloadThirdPartyRDMA is true, skip — driver will handle
-			} else {
-				// Category 2: unknown module
-				unknown = append(unknown, d)
+				continue
 			}
+			if _, isStorage := KnownStorageModules[d]; isStorage {
+				if !c.unloadStorageModules {
+					storage = append(storage, d)
+				}
+				continue
+			}
+			unknown = append(unknown, d)
 		}
 		if len(thirdParty) > 0 {
 			report.ThirdPartyRDMA = append(report.ThirdPartyRDMA, Dependency{
 				MofedModule: dep.MofedModule,
 				Dependents:  thirdParty,
+			})
+		}
+		if len(storage) > 0 {
+			report.StorageModules = append(report.StorageModules, Dependency{
+				MofedModule: dep.MofedModule,
+				Dependents:  storage,
 			})
 		}
 		if len(unknown) > 0 {
