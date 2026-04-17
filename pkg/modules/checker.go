@@ -57,6 +57,14 @@ var KnownStorageModules = map[string]struct{}{
 	"rpcrdma": {}, "xprtrdma": {}, "ib_srpt": {},
 }
 
+// KnownCoreRDMAModules is the set of core RDMA infrastructure modules that MOFED
+// manages in its own openibd unload sequence. These are always silently skipped
+// during classification regardless of flags — they are neither third-party nor
+// storage modules and should never be reported as blocking dependencies.
+var KnownCoreRDMAModules = map[string]struct{}{
+	"iw_cm": {},
+}
+
 // DependencyReport contains the classified blocking dependencies.
 type DependencyReport struct {
 	// Category 1a: Known third-party RDMA modules — can be auto-unloaded
@@ -360,7 +368,7 @@ func (c *Checker) CheckDependencies(ctx context.Context) ([]Dependency, error) {
 //   - Category 2: Unknown kernel modules (manual intervention required)
 //   - Category 3: Userspace processes holding modules open
 //
-// Modules with an "mlx5" prefix are NVIDIA's own modules and are always silently skipped.
+// Modules with an "mlx5" prefix and modules in KnownCoreRDMAModules are always silently skipped.
 func (c *Checker) RunAllChecks(ctx context.Context) (*DependencyReport, error) {
 	report := &DependencyReport{}
 
@@ -378,6 +386,10 @@ func (c *Checker) RunAllChecks(ctx context.Context) (*DependencyReport, error) {
 		for _, d := range dep.Dependents {
 			// mlx5-prefixed modules are NVIDIA's own — always greenlit
 			if strings.HasPrefix(d, "mlx5") {
+				continue
+			}
+			// Core RDMA infrastructure — MOFED's openibd handles unload
+			if _, isCore := KnownCoreRDMAModules[d]; isCore {
 				continue
 			}
 			if _, isKnown := KnownThirdPartyRDMAModules[d]; isKnown {

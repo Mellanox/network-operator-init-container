@@ -441,6 +441,22 @@ nvme_rdma 55555 0 - Live 0xffffffffa0400000
 			Expect(report.UserspaceIssues).To(BeEmpty())
 		})
 
+		It("should silently greenlit core RDMA module (iw_cm)", func() {
+			writeProcModules(procDir, `ib_core 789012 1 iw_cm, Live 0xffffffffa0200000
+iw_cm 55555 0 - Live 0xffffffffa0400000
+`)
+			createHolder(sysDir, "ib_core", "iw_cm")
+			createEmptyHolders(sysDir, "iw_cm")
+
+			checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+			report, err := checker.RunAllChecks(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.ThirdPartyRDMA).To(BeEmpty())
+			Expect(report.StorageModules).To(BeEmpty())
+			Expect(report.UnknownKernelModules).To(BeEmpty())
+			Expect(report.UserspaceIssues).To(BeEmpty())
+		})
+
 		It("should silently greenlit mlx5-prefixed module", func() {
 			// mlx5_vdpa depends on mlx5_core (MOFED) but is not in the MOFED module list
 			writeProcModules(procDir, `mlx5_core 1234567 1 mlx5_vdpa, Live 0xffffffffa0000000
