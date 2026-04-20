@@ -139,11 +139,10 @@ func RunNetworkOperatorInitContainer(ctx context.Context, config *rest.Config, o
 	}
 	logger.Info("network-operator-init-container configuration", "config", initContCfg.String())
 
-	// Module dependency check — fail fast before safe driver loading
-	if initContCfg.ModuleDependencyCheck.Enable {
-		if err := runModuleDependencyCheck(ctx, initContCfg, logger); err != nil {
-			return err
-		}
+	// Module dependency check — skipped by default. When SKIP_PREFLIGHT_CHECKS=false,
+	// the check runs and any finding returns an error that blocks driver load.
+	if err := runModuleDependencyCheck(ctx, initContCfg, logger); err != nil {
+		return err
 	}
 
 	if !initContCfg.SafeDriverLoad.Enable {
@@ -243,10 +242,22 @@ func writeCh(ch chan error, err error) {
 	}
 }
 
-// runModuleDependencyCheck performs the module dependency pre-flight check and reports any issues.
+// runModuleDependencyCheck performs the module dependency pre-flight check and returns
+// an error if any issues are found. When SkipPreflightChecks is true (the default), the
+// check is skipped entirely and the function returns nil.
 func runModuleDependencyCheck(ctx context.Context, initContCfg *configPgk.Config, logger logr.Logger) error {
+	if initContCfg.ModuleDependencyCheck.SkipPreflightChecks {
+		logger.Info("SKIP_PREFLIGHT_CHECKS=true; skipping module dependency check")
+		return nil
+	}
+
 	logger.Info("running module dependency check",
 		"modules", initContCfg.ModuleDependencyCheck.Modules)
+
+	if len(initContCfg.ModuleDependencyCheck.Modules) == 0 {
+		logger.Info("no MOFED modules configured for pre-flight dependency check, skipping")
+		return nil
+	}
 
 	procPath := initContCfg.ModuleDependencyCheck.HostProcPath
 	if procPath == "" {
@@ -257,7 +268,7 @@ func runModuleDependencyCheck(ctx context.Context, initContCfg *configPgk.Config
 		sysPath = "/sys"
 	}
 
-	if initContCfg.ModuleDependencyCheck.UnloadThirdPartyRDMA {
+	if initContCfg.ModuleDependencyCheck.UnloadThirdPartyRDMAModules {
 		logger.Info("UNLOAD_THIRD_PARTY_RDMA_MODULES is enabled; known third-party RDMA modules will be skipped")
 	}
 	if initContCfg.ModuleDependencyCheck.UnloadStorageModules {
@@ -266,7 +277,9 @@ func runModuleDependencyCheck(ctx context.Context, initContCfg *configPgk.Config
 
 	checker := modules.NewChecker(
 		initContCfg.ModuleDependencyCheck.Modules,
-		initContCfg.ModuleDependencyCheck.UnloadThirdPartyRDMA,
+		initContCfg.ModuleDependencyCheck.ThirdPartyRDMAModules,
+		initContCfg.ModuleDependencyCheck.StorageModules,
+		initContCfg.ModuleDependencyCheck.UnloadThirdPartyRDMAModules,
 		initContCfg.ModuleDependencyCheck.UnloadStorageModules,
 		procPath, sysPath, logger)
 
@@ -275,11 +288,7 @@ func runModuleDependencyCheck(ctx context.Context, initContCfg *configPgk.Config
 		return fmt.Errorf("module dependency check failed: %w", err)
 	}
 
-	if err := reportPreFlightIssues(logger, report); err != nil {
-		return err
-	}
-	logger.Info("module dependency check passed")
-	return nil
+	return reportPreFlightIssues(logger, report)
 }
 
 // reportPreFlightIssues logs all pre-flight check issues and returns an error if any were found.

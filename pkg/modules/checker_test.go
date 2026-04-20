@@ -85,11 +85,23 @@ var _ = Describe("Checker", func() {
 	})
 
 	mofedModules := []string{"mlx5_core", "mlx5_ib", "ib_core", "rdma_cm"}
+	// Match the defaults from config.ModuleDependencyCheckConfig so existing
+	// spec expectations about qedr/nvme_rdma/ib_iser/ib_srp classification hold.
+	defaultThirdPartyRDMA := []string{
+		"bnxt_re", "efa", "erdma", "iw_cxgb4",
+		"hfi1", "hns_roce", "ionic_rdma", "irdma",
+		"ib_qib", "mana_ib", "ocrdma", "qedr",
+		"rdma_rxe", "siw", "vmw_pvrdma",
+	}
+	defaultStorage := []string{
+		"ib_iser", "ib_isert", "ib_srp", "ib_srpt",
+		"nvme_rdma", "nvmet_rdma", "rpcrdma", "xprtrdma",
+	}
 	logger := klog.NewKlogr()
 
 	It("should return no dependencies when no modules are loaded", func() {
 		writeProcModules(procDir, "")
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(deps).To(BeEmpty())
@@ -106,7 +118,7 @@ rdma_cm 111111 0 - Live 0xffffffffa0300000
 		createEmptyHolders(sysDir, "ib_core")
 		createEmptyHolders(sysDir, "rdma_cm")
 
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(deps).To(BeEmpty())
@@ -120,7 +132,7 @@ ko2iblnd 55555 0 - Live 0xffffffffa0400000
 		createHolder(sysDir, "ib_core", "ko2iblnd")
 		createEmptyHolders(sysDir, "ko2iblnd")
 
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(deps).To(HaveLen(1))
@@ -138,7 +150,7 @@ ext_mod 99999 0 - Live 0xffffffffa0500000
 		createHolder(sysDir, "ko2iblnd", "ext_mod")
 		createEmptyHolders(sysDir, "ext_mod")
 
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(deps).To(HaveLen(1))
@@ -159,7 +171,7 @@ app 22222 0 - Live 0xffffffffa0800000
 		createHolder(sysDir, "storageA", "app")
 		createEmptyHolders(sysDir, "app")
 
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(deps).To(HaveLen(1))
@@ -175,7 +187,7 @@ mlx5_ib 456789 0 - Live 0xffffffffa0100000
 		createHolder(sysDir, "ib_core", "mlx5_ib")
 		createEmptyHolders(sysDir, "mlx5_ib")
 
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(deps).To(BeEmpty())
@@ -186,7 +198,7 @@ mlx5_ib 456789 0 - Live 0xffffffffa0100000
 `)
 		// No sysfs entries for MOFED modules at all
 
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(deps).To(BeEmpty())
@@ -201,7 +213,7 @@ ko2iblnd 55555 0 - Live 0xffffffffa0400000
 		createHolder(sysDir, "ib_core", "ko2iblnd")
 		createEmptyHolders(sysDir, "ko2iblnd")
 
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(deps).To(HaveLen(1))
@@ -211,7 +223,7 @@ ko2iblnd 55555 0 - Live 0xffffffffa0400000
 
 	It("should handle missing /proc/modules file gracefully", func() {
 		// procDir exists but has no modules file — no error, empty result
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(deps).To(BeEmpty())
@@ -225,7 +237,7 @@ ko2iblnd 55555 0 - Live 0xffffffffa0400000
 		createHolder(sysDir, "ib_core", "ko2iblnd")
 		createEmptyHolders(sysDir, "ko2iblnd")
 
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		// ko2iblnd is not in KnownThirdPartyRDMAModules, so CheckDependencies still reports it
@@ -240,7 +252,7 @@ ko2iblnd 55555 0 - Live 0xffffffffa0400000
 			writeProcModules(procDir, "ib_umad 28672 2 mlx5_ib 0x00000000\n")
 			createHolder(sysDir, "ib_umad", "mlx5_ib")
 
-			checker := modules.NewChecker([]string{"ib_umad"}, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker([]string{"ib_umad"}, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			issues, err := checker.CheckUserspaceUsers(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(issues).To(HaveLen(1))
@@ -256,7 +268,7 @@ ko2iblnd 55555 0 - Live 0xffffffffa0400000
 			writeProcModules(procDir, "ib_umad 28672 1 mlx5_ib 0x00000000\n")
 			createHolder(sysDir, "ib_umad", "mlx5_ib")
 
-			checker := modules.NewChecker([]string{"ib_umad"}, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker([]string{"ib_umad"}, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			issues, err := checker.CheckUserspaceUsers(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(issues).To(BeEmpty())
@@ -267,7 +279,7 @@ ko2iblnd 55555 0 - Live 0xffffffffa0400000
 			writeProcModules(procDir, "ib_umad 28672 0 - 0x00000000\n")
 			createEmptyHolders(sysDir, "ib_umad")
 
-			checker := modules.NewChecker([]string{"ib_umad"}, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker([]string{"ib_umad"}, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			issues, err := checker.CheckUserspaceUsers(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(issues).To(BeEmpty())
@@ -277,7 +289,7 @@ ko2iblnd 55555 0 - Live 0xffffffffa0400000
 			// No entry for ib_umad in /proc/modules
 			writeProcModules(procDir, "some_other_mod 1234 0 - 0x00000000\n")
 
-			checker := modules.NewChecker([]string{"ib_umad"}, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker([]string{"ib_umad"}, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			issues, err := checker.CheckUserspaceUsers(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(issues).To(BeEmpty())
@@ -294,7 +306,7 @@ ko2iblnd 55555 0 - Live 0xffffffffa0400000
 			createEmptyHolders(sysDir, "ib_uverbs")
 			createHolder(sysDir, "ib_core", "mlx5_ib")
 
-			checker := modules.NewChecker([]string{"ib_umad", "ib_uverbs", "ib_core"}, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker([]string{"ib_umad", "ib_uverbs", "ib_core"}, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			issues, err := checker.CheckUserspaceUsers(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(issues).To(HaveLen(2))
@@ -325,7 +337,7 @@ ext_c 33333 0 - Live 0xffffffffa0b00000
 		createEmptyHolders(sysDir, "ext_a")
 		createEmptyHolders(sysDir, "ext_c")
 
-		checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+		checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 		deps, err := checker.CheckDependencies(ctx)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -344,7 +356,7 @@ qedr 55555 0 - Live 0xffffffffa0400000
 			createHolder(sysDir, "ib_core", "qedr")
 			createEmptyHolders(sysDir, "qedr")
 
-			checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(HaveLen(1))
@@ -362,7 +374,7 @@ my_driver 55555 0 - Live 0xffffffffa0400000
 			createHolder(sysDir, "ib_core", "my_driver")
 			createEmptyHolders(sysDir, "my_driver")
 
-			checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(BeEmpty())
@@ -380,7 +392,7 @@ my_driver 55555 0 - Live 0xffffffffa0400000
 			createHolder(sysDir, "ib_umad", "mlx5_ib")
 			createEmptyHolders(sysDir, "mlx5_ib")
 
-			checker := modules.NewChecker([]string{"ib_umad", "mlx5_ib"}, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker([]string{"ib_umad", "mlx5_ib"}, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(BeEmpty())
@@ -398,11 +410,35 @@ qedr 55555 0 - Live 0xffffffffa0400000
 			createHolder(sysDir, "ib_core", "qedr")
 			createEmptyHolders(sysDir, "qedr")
 
-			checker := modules.NewChecker(mofedModules, true, false, procDir, sysDir, logger)
+			checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, true, false, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(BeEmpty())
 			Expect(report.StorageModules).To(BeEmpty())
+			Expect(report.UnknownKernelModules).To(BeEmpty())
+			Expect(report.UserspaceIssues).To(BeEmpty())
+		})
+
+		It("should classify ib_iser and ib_srp as Category 1b with default storage list", func() {
+			// The original motivating bug: ib_iser (and ib_srp) were being classified as
+			// unknown because they weren't in the hardcoded storage list. They must now
+			// be recognized via the default STORAGE_MODULES env-driven list.
+			writeProcModules(procDir, `ib_core 789012 2 ib_iser,ib_srp, Live 0xffffffffa0200000
+ib_iser 55555 0 - Live 0xffffffffa0400000
+ib_srp 66666 0 - Live 0xffffffffa0500000
+`)
+			createHolder(sysDir, "ib_core", "ib_iser")
+			createHolder(sysDir, "ib_core", "ib_srp")
+			createEmptyHolders(sysDir, "ib_iser")
+			createEmptyHolders(sysDir, "ib_srp")
+
+			checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
+			report, err := checker.RunAllChecks(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.ThirdPartyRDMA).To(BeEmpty())
+			Expect(report.StorageModules).To(HaveLen(1))
+			Expect(report.StorageModules[0].MofedModule).To(Equal("ib_core"))
+			Expect(report.StorageModules[0].Dependents).To(ConsistOf("ib_iser", "ib_srp"))
 			Expect(report.UnknownKernelModules).To(BeEmpty())
 			Expect(report.UserspaceIssues).To(BeEmpty())
 		})
@@ -414,7 +450,7 @@ nvme_rdma 55555 0 - Live 0xffffffffa0400000
 			createHolder(sysDir, "ib_core", "nvme_rdma")
 			createEmptyHolders(sysDir, "nvme_rdma")
 
-			checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(BeEmpty())
@@ -432,7 +468,7 @@ nvme_rdma 55555 0 - Live 0xffffffffa0400000
 			createHolder(sysDir, "ib_core", "nvme_rdma")
 			createEmptyHolders(sysDir, "nvme_rdma")
 
-			checker := modules.NewChecker(mofedModules, false, true, procDir, sysDir, logger)
+			checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, true, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(BeEmpty())
@@ -448,7 +484,7 @@ iw_cm 55555 0 - Live 0xffffffffa0400000
 			createHolder(sysDir, "ib_core", "iw_cm")
 			createEmptyHolders(sysDir, "iw_cm")
 
-			checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(BeEmpty())
@@ -465,7 +501,7 @@ mlx5_vdpa 55555 0 - Live 0xffffffffa0400000
 			createHolder(sysDir, "mlx5_core", "mlx5_vdpa")
 			createEmptyHolders(sysDir, "mlx5_vdpa")
 
-			checker := modules.NewChecker([]string{"mlx5_core"}, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker([]string{"mlx5_core"}, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(BeEmpty())
@@ -484,7 +520,7 @@ my_driver 44444 0 - Live 0xffffffffa0500000
 			createEmptyHolders(sysDir, "mlx5_vdpa")
 			createEmptyHolders(sysDir, "my_driver")
 
-			checker := modules.NewChecker([]string{"mlx5_core"}, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker([]string{"mlx5_core"}, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(BeEmpty())
@@ -517,7 +553,7 @@ ib_umad 28672 2 mlx5_ib 0x00000000
 			createHolder(sysDir, "ib_umad", "mlx5_ib")
 
 			checker := modules.NewChecker([]string{"mlx5_core", "mlx5_ib", "ib_core", "rdma_cm", "ib_umad"},
-				false, false, procDir, sysDir, logger)
+				defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(HaveLen(1))
@@ -540,7 +576,7 @@ ib_core 789012 1 mlx5_ib, Live 0xffffffffa0200000
 			createEmptyHolders(sysDir, "mlx5_ib")
 			createHolder(sysDir, "ib_core", "mlx5_ib")
 
-			checker := modules.NewChecker(mofedModules, false, false, procDir, sysDir, logger)
+			checker := modules.NewChecker(mofedModules, defaultThirdPartyRDMA, defaultStorage, false, false, procDir, sysDir, logger)
 			report, err := checker.RunAllChecks(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.ThirdPartyRDMA).To(BeEmpty())

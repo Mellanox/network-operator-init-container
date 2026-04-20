@@ -16,6 +16,8 @@ package app_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -199,5 +201,98 @@ var _ = Describe("Init container", func() {
 			Expect(err).NotTo(HaveOccurred())
 		}()
 		Eventually(testDone, 1*time.Minute).Should(BeClosed())
+	})
+
+	Context("pre-flight check skip vs run behavior", func() {
+		// Build a fake host /proc and /sys layout that contains a blocking dependency
+		// my_driver -> ib_core. The check will classify my_driver as an unknown kernel
+		// module. Whether this aborts init is controlled by SKIP_PREFLIGHT_CHECKS.
+		var procDir, sysDir string
+
+		BeforeEach(func() {
+			var err error
+			procDir, err = os.MkdirTemp("", "app-proc-*")
+			Expect(err).NotTo(HaveOccurred())
+			sysDir, err = os.MkdirTemp("", "app-sys-*")
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(os.WriteFile(
+				filepath.Join(procDir, "modules"),
+				[]byte("ib_core 789012 1 my_driver, Live 0xffffffffa0200000\n"+
+					"my_driver 55555 0 - Live 0xffffffffa0400000\n"),
+				0644,
+			)).To(Succeed())
+
+			holders := filepath.Join(sysDir, "module", "ib_core", "holders")
+			Expect(os.MkdirAll(holders, 0755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(holders, "my_driver"), []byte{}, 0644)).To(Succeed())
+			Expect(os.MkdirAll(filepath.Join(sysDir, "module", "my_driver", "holders"), 0755)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			Expect(os.RemoveAll(procDir)).To(Succeed())
+			Expect(os.RemoveAll(sysDir)).To(Succeed())
+			// Ensure we don't leak env vars between specs.
+			Expect(os.Unsetenv("SKIP_PREFLIGHT_CHECKS")).To(Succeed())
+		})
+
+		It("blocks init when SkipPreflightChecks=false and issues are found", func() {
+			Expect(os.Setenv("SKIP_PREFLIGHT_CHECKS", "false")).To(Succeed())
+
+			testDone := make(chan interface{})
+			go func() {
+				defer close(testDone)
+				defer GinkgoRecover()
+				opts := newOpts()
+				opts.NodeName = testNodeName
+				createConfig(&configPgk.Config{
+					SafeDriverLoad: configPgk.SafeDriverLoadConfig{Enable: false},
+					ModuleDependencyCheck: configPgk.ModuleDependencyCheckConfig{
+						Modules:      []string{"ib_core"},
+						HostProcPath: procDir,
+						HostSysPath:  sysDir,
+					},
+				})
+				var err error
+				appExit := make(chan interface{})
+				go func() {
+					err = app.RunNetworkOperatorInitContainer(testCtx, cfg, opts)
+					close(appExit)
+				}()
+				Eventually(appExit, 30, 1).Should(BeClosed())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("pre-flight check found"))
+			}()
+			Eventually(testDone, 1*time.Minute).Should(BeClosed())
+		})
+
+		It("does not run check when SkipPreflightChecks=true (default)", func() {
+			// Env var is unset in BeforeEach, so the struct-tag default (true) applies.
+			testDone := make(chan interface{})
+			go func() {
+				defer close(testDone)
+				defer GinkgoRecover()
+				opts := newOpts()
+				opts.NodeName = testNodeName
+				createConfig(&configPgk.Config{
+					// Safe driver load disabled so the call returns cleanly after the check.
+					SafeDriverLoad: configPgk.SafeDriverLoadConfig{Enable: false},
+					ModuleDependencyCheck: configPgk.ModuleDependencyCheckConfig{
+						Modules:      []string{"ib_core"},
+						HostProcPath: procDir,
+						HostSysPath:  sysDir,
+					},
+				})
+				var err error
+				appExit := make(chan interface{})
+				go func() {
+					err = app.RunNetworkOperatorInitContainer(testCtx, cfg, opts)
+					close(appExit)
+				}()
+				Eventually(appExit, 30, 1).Should(BeClosed())
+				Expect(err).NotTo(HaveOccurred())
+			}()
+			Eventually(testDone, 1*time.Minute).Should(BeClosed())
+		})
 	})
 })
