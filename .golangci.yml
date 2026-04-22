@@ -15,7 +15,6 @@ linters:
     - gosec
     - govet
     - ineffassign
-    - lll
     - misspell
     - mnd
     - nakedret
@@ -67,8 +66,6 @@ linters:
       checks:
         - "all"
         - "-QF*"
-    lll:
-      line-length: 120
     misspell:
       locale: US
     prealloc:

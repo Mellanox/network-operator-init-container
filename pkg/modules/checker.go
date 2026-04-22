@@ -31,32 +31,6 @@ const (
 	logVerbosityDebug         = 2
 )
 
-// KnownThirdPartyRDMAModules is the set of non-NVIDIA kernel modules from the RDMA ecosystem
-// (third-party NIC vendor RDMA providers). When UnloadThirdPartyRDMA is true these are
-// treated as allowed and the driver container will handle their unloading.
-//
-// NOTE: Do NOT add core RDMA infrastructure modules (iw_cm, ib_cm, rdma_cm, etc.)
-// here — MOFED manages those in its own unload sequence. Do NOT add storage-over-RDMA
-// modules (ib_srp, ib_iser, ib_isert, nvme_rdma, etc.) — those are handled by
-// UNLOAD_STORAGE_MODULES in the driver container.
-var KnownThirdPartyRDMAModules = map[string]struct{}{
-	"bnxt_re": {}, "efa": {}, "erdma": {}, "iw_cxgb4": {},
-	"hfi1": {}, "hns_roce": {}, "ionic_rdma": {}, "irdma": {},
-	"ib_qib": {}, "mana_ib": {}, "ocrdma": {}, "qedr": {},
-	"rdma_rxe": {}, "siw": {}, "vmw_pvrdma": {},
-}
-
-// KnownStorageModules is the set of storage-over-RDMA kernel modules that can block
-// MOFED driver reload. When UnloadStorageModules is true these are treated as allowed
-// and the driver container will handle their unloading via UNLOAD_STORAGE_MODULES.
-//
-// This list must be kept in sync with doca-driver-build's StorageModules
-// (entrypoint/internal/config/config.go, STORAGE_MODULES env var).
-var KnownStorageModules = map[string]struct{}{
-	"ib_isert": {}, "nvme_rdma": {}, "nvmet_rdma": {},
-	"rpcrdma": {}, "xprtrdma": {}, "ib_srpt": {},
-}
-
 // KnownCoreRDMAModules is the set of core RDMA infrastructure modules that MOFED
 // manages in its own openibd unload sequence. These are always silently skipped
 // during classification regardless of flags — they are neither third-party nor
@@ -90,36 +64,53 @@ type Dependency struct {
 // /sys/module/*/holders/ to identify blocking dependencies, performing
 // full transitive tree traversal to find indirect dependents.
 type Checker struct {
-	modules              map[string]struct{}
-	unloadThirdPartyRDMA bool
-	unloadStorageModules bool
-	hostProcPath         string
-	hostSysPath          string
-	logger               logr.Logger
+	modules               map[string]struct{}
+	thirdPartyRDMAModules map[string]struct{}
+	storageModules        map[string]struct{}
+	unloadThirdPartyRDMA  bool
+	unloadStorageModules  bool
+	hostProcPath          string
+	hostSysPath           string
+	logger                logr.Logger
 }
 
 // NewChecker creates a new module dependency checker.
 // modules is the list of MOFED kernel modules to check for external dependencies.
+// thirdPartyRDMA is the list of third-party NIC-vendor RDMA modules that the driver
+// container is expected to unload when unloadThirdPartyRDMA is true.
+// storage is the list of storage-over-RDMA modules that the driver container is
+// expected to unload when unloadStorageModules is true.
 // unloadThirdPartyRDMA controls whether known third-party RDMA modules are treated
 // as allowed (the driver container will handle their unloading).
 // unloadStorageModules controls whether known storage-over-RDMA modules are treated
 // as allowed (the driver container will handle their unloading).
 // hostProcPath and hostSysPath are paths to the host's /proc and /sys mounts.
 func NewChecker(
-	modules []string, unloadThirdPartyRDMA bool, unloadStorageModules bool,
+	modules []string, thirdPartyRDMA []string, storage []string,
+	unloadThirdPartyRDMA bool, unloadStorageModules bool,
 	hostProcPath, hostSysPath string, logger logr.Logger,
 ) *Checker {
 	moduleSet := make(map[string]struct{}, len(modules))
 	for _, m := range modules {
 		moduleSet[m] = struct{}{}
 	}
+	thirdPartySet := make(map[string]struct{}, len(thirdPartyRDMA))
+	for _, m := range thirdPartyRDMA {
+		thirdPartySet[m] = struct{}{}
+	}
+	storageSet := make(map[string]struct{}, len(storage))
+	for _, m := range storage {
+		storageSet[m] = struct{}{}
+	}
 	return &Checker{
-		modules:              moduleSet,
-		unloadThirdPartyRDMA: unloadThirdPartyRDMA,
-		unloadStorageModules: unloadStorageModules,
-		hostProcPath:         hostProcPath,
-		hostSysPath:          hostSysPath,
-		logger:               logger,
+		modules:               moduleSet,
+		thirdPartyRDMAModules: thirdPartySet,
+		storageModules:        storageSet,
+		unloadThirdPartyRDMA:  unloadThirdPartyRDMA,
+		unloadStorageModules:  unloadStorageModules,
+		hostProcPath:          hostProcPath,
+		hostSysPath:           hostSysPath,
+		logger:                logger,
 	}
 }
 
@@ -361,6 +352,36 @@ func (c *Checker) CheckDependencies(ctx context.Context) ([]Dependency, error) {
 	return deps, nil
 }
 
+// classifyDependents splits a set of non-MOFED dependent modules into three
+// buckets: known third-party RDMA, known storage-over-RDMA, and unknown.
+// Modules with an "mlx5" prefix and modules in KnownCoreRDMAModules are always
+// silently skipped. When the corresponding unload flag is set, known modules
+// are also silently skipped (the driver container will handle their unloading).
+func (c *Checker) classifyDependents(dependents []string) (thirdParty, storage, unknown []string) {
+	for _, d := range dependents {
+		if strings.HasPrefix(d, "mlx5") {
+			continue
+		}
+		if _, isCore := KnownCoreRDMAModules[d]; isCore {
+			continue
+		}
+		if _, isKnown := c.thirdPartyRDMAModules[d]; isKnown {
+			if !c.unloadThirdPartyRDMA {
+				thirdParty = append(thirdParty, d)
+			}
+			continue
+		}
+		if _, isStorage := c.storageModules[d]; isStorage {
+			if !c.unloadStorageModules {
+				storage = append(storage, d)
+			}
+			continue
+		}
+		unknown = append(unknown, d)
+	}
+	return thirdParty, storage, unknown
+}
+
 // RunAllChecks performs BFS dependency detection and userspace detection, then
 // classifies each blocking issue into one of four categories:
 //   - Category 1a: Known third-party RDMA modules (auto-unloadable when flag is set)
@@ -380,32 +401,7 @@ func (c *Checker) RunAllChecks(ctx context.Context) (*DependencyReport, error) {
 
 	// Step 2: Classify kernel module dependencies
 	for _, dep := range allDeps {
-		var thirdParty []string
-		var storage []string
-		var unknown []string
-		for _, d := range dep.Dependents {
-			// mlx5-prefixed modules are NVIDIA's own — always greenlit
-			if strings.HasPrefix(d, "mlx5") {
-				continue
-			}
-			// Core RDMA infrastructure — MOFED's openibd handles unload
-			if _, isCore := KnownCoreRDMAModules[d]; isCore {
-				continue
-			}
-			if _, isKnown := KnownThirdPartyRDMAModules[d]; isKnown {
-				if !c.unloadThirdPartyRDMA {
-					thirdParty = append(thirdParty, d)
-				}
-				continue
-			}
-			if _, isStorage := KnownStorageModules[d]; isStorage {
-				if !c.unloadStorageModules {
-					storage = append(storage, d)
-				}
-				continue
-			}
-			unknown = append(unknown, d)
-		}
+		thirdParty, storage, unknown := c.classifyDependents(dep.Dependents)
 		if len(thirdParty) > 0 {
 			report.ThirdPartyRDMA = append(report.ThirdPartyRDMA, Dependency{
 				MofedModule: dep.MofedModule,
