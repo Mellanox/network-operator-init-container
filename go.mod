@@ -5,7 +5,7 @@ go 1.25
 require (
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/go-logr/logr v1.4.3
-	github.com/onsi/ginkgo/v2 v2.28.1
+	github.com/onsi/ginkgo/v2 v2.28.2
 	github.com/onsi/gomega v1.39.1
 	github.com/spf13/cobra v1.10.2
 	k8s.io/api v0.34.6
