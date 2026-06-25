@@ -22,9 +22,9 @@ DOCKERFILE ?= Dockerfile
 DOCKER_CMD ?= docker
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.31.0
+ENVTEST_K8S_VERSION = 1.36.0
 
-SETUP_ENVTEST_VERSION ?= release-0.21
+SETUP_ENVTEST_VERSION ?= release-0.24
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -106,20 +106,22 @@ $(LOCALBIN):
 
 ##@ Tools
 
+GO_MOD_VERSION := $(shell grep '^go ' go.mod | awk '{print $$2}')
+
 ## Tool Binaries
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCILINT ?= $(LOCALBIN)/golangci-lint-$(GOLANGCILINT_VERSION)
 
 ## Tool Versions
-GOLANGCILINT_VERSION ?= v2.11.4
+GOLANGCILINT_VERSION ?= v2.12.2
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
+	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCILINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCILINT): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
+	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
 	mv $(LOCALBIN)/golangci-lint $(GOLANGCILINT)
