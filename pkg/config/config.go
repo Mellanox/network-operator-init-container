@@ -54,6 +54,8 @@ type Config struct {
 	SafeDriverLoad SafeDriverLoadConfig `json:"safeDriverLoad"`
 	// configuration options for module dependency checking feature
 	ModuleDependencyCheck ModuleDependencyCheckConfig `json:"moduleDependencyCheck"`
+	// configuration options for updateOfedLabel feature
+	UpdateOfedLabel UpdateOfedLabelConfig `json:"updateOfedLabel"`
 }
 
 // ModuleDependencyCheckConfig contains configuration options for module dependency checking feature.
@@ -97,6 +99,12 @@ type SafeDriverLoadConfig struct {
 	Enable bool `json:"enable"`
 	// annotation to use for safeDriverLoading feature
 	Annotation string `json:"annotation"`
+}
+
+// UpdateOfedLabelConfig contains configuration options for updateOfedLabel feature
+type UpdateOfedLabelConfig struct {
+	// enable updateOfedLabel feature
+	Enable bool `json:"enable"`
 }
 
 // Validate checks the configuration

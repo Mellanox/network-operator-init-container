@@ -22,6 +22,9 @@ data:
       "safeDriverLoad": {
         "enable": true,
         "annotation": "some-annotation"
+      },
+      "updateOfedLabel": {
+        "enable": true
       }
     }
 ```
@@ -29,6 +32,9 @@ data:
 - `safeDriverLoad` - contains settings related to safeDriverLoad feature
 - `safeDriverLoad.enable` - enable safeDriveLoad feature
 - `safeDriverLoad.annotation` - annotation to use for safeDriverLoad feature
+- `updateOfedLabel` - contains settings related to updateOfedLabel feature
+- `updateOfedLabel.enable` - enable updateOfedLabel feature
+- `updateOfedLabel.label` - label to use for updateOfedLabel feature
 
 
 If `safeDriverLoad` feature is enabled then the network-operator-init-container container will set annotation
@@ -36,6 +42,9 @@ provided in `safeDriverLoad.annotation` on the Kubernetes Node object identified
 The container exits with code 0 when the annotation is removed from the Node object.
 
 If `safeDriverLoad` feature is disabled then the container will immediately exit with code 0.
+
+If `updateOfedLabel` feature is enabled then the network-operator-init-container container will set the label
+provided in `updateOfedLabel.label` to `"true"` on the Kubernetes Node object identified by `--node-name`.
 
 ### Required permissions
 
