@@ -22,9 +22,11 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -47,6 +49,9 @@ import (
 
 const requeueInterval = 5 * time.Second
 
+// mofedWaitLabel is the label set on the node by the --post-start mode
+const mofedWaitLabel = "network.nvidia.com/operator.mofed.wait"
+
 // NewNetworkOperatorInitContainerCommand creates a new command
 func NewNetworkOperatorInitContainerCommand() *cobra.Command {
 	opts := options.New()
@@ -65,7 +70,8 @@ func NewNetworkOperatorInitContainerCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to read config for k8s client: %v", err)
 			}
-			return RunNetworkOperatorInitContainer(logr.NewContext(ctx, klog.NewKlogr()), conf, opts)
+			runCtx := logr.NewContext(ctx, klog.NewKlogr())
+			return RunNetworkOperatorInitContainer(runCtx, conf, opts)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
 			for _, arg := range args {
@@ -120,24 +126,19 @@ func RunNetworkOperatorInitContainer(ctx context.Context, config *rest.Config, o
 		return err
 	}
 
-	confConfigMap := &corev1.ConfigMap{}
-
-	err = k8sClient.Get(ctx, client.ObjectKey{
-		Name:      opts.ConfigMapName,
-		Namespace: opts.ConfigMapNamespace,
-	}, confConfigMap)
-
-	if err != nil {
-		logger.Error(err, "failed to read config map with configuration")
-		return err
-	}
-
-	initContCfg, err := configPgk.Load(confConfigMap.Data[opts.ConfigMapKey])
+	initContCfg, err := loadInitContainerConfig(ctx, k8sClient, opts)
 	if err != nil {
 		logger.Error(err, "failed to read configuration")
 		return err
 	}
 	logger.Info("network-operator-init-container configuration", "config", initContCfg.String())
+
+	if initContCfg.UpdateOfedLabel.Enable {
+		if err = setNodeLabel(ctx, logger, k8sClient, opts.NodeName, mofedWaitLabel, "true"); err != nil {
+			logger.Error(err, "unable to set label for node", "node", opts.NodeName)
+			return err
+		}
+	}
 
 	// Module dependency check — skipped by default. When SKIP_PREFLIGHT_CHECKS=false,
 	// the check runs and any finding returns an error that blocks driver load.
@@ -224,6 +225,19 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	return ctrl.Result{RequeueAfter: requeueInterval}, nil
 }
 
+// loadInitContainerConfig reads the app configuration from the ConfigMap identified by opts.
+func loadInitContainerConfig(ctx context.Context, k8sClient client.Client, opts *options.Options) (*configPgk.Config, error) {
+	confConfigMap := &corev1.ConfigMap{}
+	if err := k8sClient.Get(ctx, client.ObjectKey{
+		Name:      opts.ConfigMapName,
+		Namespace: opts.ConfigMapNamespace,
+	}, confConfigMap); err != nil {
+		return nil, fmt.Errorf("failed to read config map with configuration: %w", err)
+	}
+
+	return configPgk.Load(confConfigMap.Data[opts.ConfigMapKey])
+}
+
 func setNodeAnnotation(ctx context.Context, k8sClient client.Client, nodeName, annotation string) error {
 	node := &corev1.Node{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, node); err != nil {
@@ -233,6 +247,23 @@ func setNodeAnnotation(ctx context.Context, k8sClient client.Client, nodeName, a
 		types.MergePatchType, []byte(
 			fmt.Sprintf(`{"metadata":{"annotations":{%q: %q}}}`,
 				annotation, "true"))))
+}
+
+func setNodeLabel(ctx context.Context, logger logr.Logger, k8sClient client.Client, nodeName, label, value string) error {
+	patch := []byte(fmt.Sprintf(`{"metadata":{"labels":{%q: %q}}}`, label, value))
+	logger.Info("patching node label", "node", nodeName, "label", label, "value", value, "patch", string(patch))
+
+	err := k8sClient.Patch(ctx, &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName,
+		},
+	}, client.RawPatch(types.StrategicMergePatchType, patch))
+
+	if err != nil {
+		return errors.Wrapf(err, "unable to patch %s label for node %s", label, nodeName)
+	}
+	logger.Info("node label patched successfully", "node", nodeName, "label", label, "value", value)
+	return nil
 }
 
 func writeCh(ch chan error, err error) {
