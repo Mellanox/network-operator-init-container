@@ -106,8 +106,6 @@ $(LOCALBIN):
 
 ##@ Tools
 
-GO_MOD_VERSION := $(shell grep '^go ' go.mod | awk '{print $$2}')
-
 ## Tool Binaries
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCILINT ?= $(LOCALBIN)/golangci-lint-$(GOLANGCILINT_VERSION)
@@ -118,10 +116,10 @@ GOLANGCILINT_VERSION ?= v2.12.2
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCILINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCILINT): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
+	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
 	mv $(LOCALBIN)/golangci-lint $(GOLANGCILINT)
