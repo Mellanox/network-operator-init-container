@@ -8,7 +8,6 @@ jobs:
   ci:
     uses: Mellanox/cloud-orchestration-reusable-workflows/.github/workflows/go-ci-reusable.yml@main
     with:
-      go-version: 1.26.x
       build-command: make build
       lint-command: make lint
       test-command: make unit-test
